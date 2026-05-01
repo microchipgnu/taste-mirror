@@ -14,7 +14,10 @@
  * mapVibeToTagIds returns at most MAX_TAGS to keep the search forgiving.
  */
 
-const MAX_TAGS = 2;
+// Filtering by tags is AND in Viator's API. Multiple tags compound very
+// quickly (Lisbon goes from 4141 products → 0 with 2 tags). Stick to one
+// strong signal and let the skill's post-filter handle the rest.
+const MAX_TAGS = 1;
 
 interface ViatorTag {
   tagId: number;

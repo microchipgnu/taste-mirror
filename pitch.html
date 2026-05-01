@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Taste-Mirror — pitch</title>
+<style>
+  :root {
+    --bg: #f6f3ec;
+    --ink: #1a1a1a;
+    --muted: #6b665d;
+    --accent: #c2410c;
+    --rule: #d8d2c4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", "SF Pro Text", -apple-system, system-ui, sans-serif;
+    font-feature-settings: "ss01", "ss02";
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  .deck { position: relative; width: 100vw; height: 100vh; }
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    padding: 7vh 9vw;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2.4vh;
+  }
+  .slide.active { display: flex; }
+  h1 { font-size: clamp(40px, 7.6vw, 132px); line-height: 0.96; letter-spacing: -0.035em; font-weight: 700; }
+  h2 { font-size: clamp(28px, 4.4vw, 76px); line-height: 1.04; letter-spacing: -0.025em; font-weight: 600; }
+  h3 { font-size: clamp(20px, 2.4vw, 36px); line-height: 1.15; letter-spacing: -0.015em; font-weight: 600; color: var(--muted); }
+  p, li { font-size: clamp(16px, 1.8vw, 30px); line-height: 1.4; max-width: 60ch; }
+  .lead { font-size: clamp(20px, 2.6vw, 44px); line-height: 1.3; max-width: 28ch; letter-spacing: -0.012em; }
+  .kicker { text-transform: uppercase; letter-spacing: 0.18em; font-size: clamp(11px, 1vw, 16px); color: var(--accent); font-weight: 600; }
+  .accent { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .rule { height: 1px; background: var(--rule); margin: 2vh 0; }
+  ul { list-style: none; }
+  ul.bullets li {
+    padding-left: 1.4em;
+    position: relative;
+    margin-bottom: 1.2vh;
+  }
+  ul.bullets li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3vw; }
+  .card {
+    border: 1px solid var(--rule);
+    padding: 2.4vh 2vw;
+    border-radius: 4px;
+  }
+  .card .num {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: var(--accent);
+    font-size: clamp(14px, 1.4vw, 22px);
+    font-weight: 600;
+    margin-bottom: 1vh;
+  }
+  .card h4 {
+    font-size: clamp(18px, 2vw, 30px);
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    margin-bottom: 0.8vh;
+    font-weight: 600;
+  }
+  .card p { font-size: clamp(13px, 1.3vw, 20px); color: var(--muted); }
+  code, .mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.92em;
+  }
+  .filename {
+    background: rgba(194, 65, 12, 0.08);
+    color: var(--accent);
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+  }
+  .nav {
+    position: fixed;
+    bottom: 2.5vh; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 4vw;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: clamp(11px, 0.95vw, 14px);
+    color: var(--muted);
+    pointer-events: none;
+    user-select: none;
+  }
+  .progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 2px;
+    background: var(--accent);
+    transition: width 280ms ease;
+  }
+  .stack > * + * { margin-top: 1.6vh; }
+  .pill {
+    display: inline-block;
+    padding: 0.3em 0.8em;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    font-size: clamp(12px, 1.1vw, 18px);
+    color: var(--muted);
+    margin-right: 0.6em;
+    margin-bottom: 0.6em;
+  }
+  .big-num {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: clamp(42px, 7vw, 110px);
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+  .quote {
+    font-size: clamp(22px, 3vw, 50px);
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+    font-weight: 500;
+    max-width: 24ch;
+  }
+  .quote::before { content: "\201C"; color: var(--accent); margin-right: 0.05em; }
+  .quote::after { content: "\201D"; color: var(--accent); }
+  .ascii {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: clamp(10px, 0.95vw, 15px);
+    line-height: 1.45;
+    color: var(--ink);
+    white-space: pre;
+    overflow: hidden;
+  }
+  .strike { text-decoration: line-through; color: var(--muted); text-decoration-color: var(--accent); }
+  .check { color: var(--accent); margin-right: 0.5em; }
+  .footer-mark {
+    position: fixed; top: 2.5vh; right: 4vw;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: clamp(11px, 0.95vw, 14px);
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="footer-mark">Taste-Mirror · Viator hackathon</div>
+
+<div class="deck" id="deck">
+
+  <!-- 1. Title -->
+  <section class="slide stack">
+    <span class="kicker">A Claude skill for Viator</span>
+    <h1>Taste-Mirror.</h1>
+    <p class="lead muted">Claude already knows you. We turn that into travel taste.</p>
+  </section>
+
+  <!-- 2. Hook -->
+  <section class="slide stack">
+    <span class="kicker">The hook</span>
+    <p class="quote">Every recommender on the internet treats you like a stranger.</p>
+    <div class="rule"></div>
+    <p class="lead">If you use Claude, <span class="accent">Claude isn't a stranger.</span></p>
+    <p class="muted">It's seen thousands of your messages. It knows your pace, what frustrates you, what you double-check, what you let slide.</p>
+  </section>
+
+  <!-- 3. Problem -->
+  <section class="slide stack">
+    <span class="kicker">The problem</span>
+    <h2>Pinterest knows your taste.<br/>Viator has the catalog.<br/><span class="muted">Nothing connects them.</span></h2>
+    <p>Travelers spend hours translating mood-boards into search queries — and lose the vibe in the translation. <span class="accent">"Top things to do in Lisbon"</span> returns the same hop-on/hop-off bus to everyone.</p>
+  </section>
+
+  <!-- 4. The two layers -->
+  <section class="slide stack">
+    <span class="kicker">The insight</span>
+    <h2>Two signals, fused.</h2>
+    <div class="grid-2" style="margin-top: 2vh;">
+      <div class="card">
+        <div class="num">01 — persistent</div>
+        <h4>Who you are</h4>
+        <p>Pace. Energy budget. What drains you. Hidden anxieties. Blind spots. What you'd light up for. Built once from your Claude Code transcripts, refreshed monthly.</p>
+      </div>
+      <div class="card">
+        <div class="num">02 — live</div>
+        <h4>This trip's vibe</h4>
+        <p>Themes. Aesthetic. Pace. Social load. What to avoid. Read on the spot from a handful of inspiration photos.</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top: 2vh;">The vibe is the mood. The profile is the person. We match on both.</p>
+  </section>
+
+  <!-- 5. Traveler profile (the killer move) -->
+  <section class="slide stack">
+    <span class="kicker">The killer move</span>
+    <h2>The traveler profile.</h2>
+    <p class="lead">Built from <span class="accent">your own Claude Code transcripts</span> — already sitting on your laptop.</p>
+    <ul class="bullets">
+      <li>Walks every project under <span class="filename">~/.claude/projects/</span></li>
+      <li>Reads <span class="accent">only your messages</span> — prompts, corrections, "no, not like that"</li>
+      <li>Distills each project into a behavioral sketch via your existing Claude auth — no extra API key</li>
+      <li>Merges everything into <span class="filename">~/.taste-mirror/traveler_profile.md</span></li>
+    </ul>
+    <p class="muted">First run: 30–50 min on ~100 projects. Cached after. The skill reads it but never quotes it back — interior monologue, not a horoscope.</p>
+  </section>
+
+  <!-- 6. End-to-end flow -->
+  <section class="slide stack">
+    <span class="kicker">End-to-end</span>
+    <h2>What happens when you drop photos.</h2>
+    <div class="grid-3" style="margin-top: 2vh;">
+      <div class="card">
+        <div class="num">01</div>
+        <h4>Read</h4>
+        <p>Claude analyzes the images itself — vibe, pace, social, what to avoid. Loads your traveler profile.</p>
+      </div>
+      <div class="card">
+        <div class="num">02</div>
+        <h4>Match</h4>
+        <p>Server hits Viator's Partner API: tags, search, filtered by vibe + profile-biased avoids.</p>
+      </div>
+      <div class="card">
+        <div class="num">03</div>
+        <h4>Curate</h4>
+        <p>Claude picks the top 3, drops generic filler, enriches with full Viator detail, writes reasoning that cites your photos.</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top: 1vh;">Affiliate URL passed through as-is. Attribution preserved. We curate. Viator books.</p>
+  </section>
+
+  <!-- 7. Concrete example -->
+  <section class="slide stack">
+    <span class="kicker">In practice</span>
+    <h3>Six photos: misty vineyards, hands holding olive oil, a vespa on a dirt road, fresh pasta, a wooden farmhouse table.</h3>
+    <p class="quote" style="margin-top: 1vh;">Slow. Golden-hour. Hands-in-food. Rural.</p>
+    <div class="rule"></div>
+    <p class="lead">Profile says: <span class="muted">over-plans transitions. Quietly burns out on social load. Won't ask for downtime but needs it.</span></p>
+    <p class="lead accent">→ Private cooking class with the host, not the 16-person tour. Pre-booked transfer. Next morning left open.</p>
+  </section>
+
+  <!-- 8. Why now -->
+  <section class="slide stack">
+    <span class="kicker">Why now</span>
+    <h2>Three things had to land at once.</h2>
+    <div class="grid-3" style="margin-top: 2vh;">
+      <div class="card">
+        <div class="num">01</div>
+        <h4>Vision + reasoning in one model</h4>
+        <p>The vibe extraction has to feel like the model gets it. That's perception and curation in one shot — only Claude.</p>
+      </div>
+      <div class="card">
+        <div class="num">02</div>
+        <h4>A persistent user signal</h4>
+        <p>Claude Code transcripts are a goldmine of personality data the user already produced — for free, at high fidelity. No cold start.</p>
+      </div>
+      <div class="card">
+        <div class="num">03</div>
+        <h4>Skills as a surface</h4>
+        <p>No app to install. No website to remember. The user is already inside the agent.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. Why Viator -->
+  <section class="slide stack">
+    <span class="kicker">For Viator</span>
+    <h2>The right shape.</h2>
+    <ul class="bullets">
+      <li><strong>Affiliate-pure.</strong> We curate. Viator books. Zero inventory, zero payments.</li>
+      <li><strong>Top-of-funnel demand.</strong> Inspiration is where the user starts — we meet them there.</li>
+      <li><strong>The long-tail unlock.</strong> Vibe + profile match surfaces the high-margin products with the worst keyword discoverability.</li>
+      <li><strong>Differentiated quality.</strong> A user who books from a recommendation that <em>cites their photos and their profile</em> churns less than one who booked off SEO.</li>
+    </ul>
+  </section>
+
+  <!-- 10. What's built -->
+  <section class="slide stack">
+    <span class="kicker">Shipped in 48h</span>
+    <h2>What's actually built.</h2>
+    <ul class="bullets">
+      <li><span class="check">✓</span><strong>Claude Skill</strong> — <span class="filename">SKILL.md</span> + references + the profile-builder script</li>
+      <li><span class="check">✓</span><strong>Profile builder</strong> — distills ~100 Claude Code projects, your auth, no new API key</li>
+      <li><span class="check">✓</span><strong><span class="filename">/api/match</span></strong> — Vercel function: vibe + destination → ranked Viator candidates</li>
+      <li><span class="check">✓</span><strong><span class="filename">/api/enrich</span></strong> — full product detail for the picks</li>
+      <li><span class="check">✓</span><strong>Live Viator Partner API</strong> — destinations, tags, search, product detail</li>
+      <li><span class="check">✓</span><strong>Affiliate-correct</strong> — <span class="mono">productUrl</span> passed through as-is</li>
+    </ul>
+  </section>
+
+  <!-- 11. Closer -->
+  <section class="slide stack" style="justify-content: center; align-items: flex-start;">
+    <span class="kicker">One sentence</span>
+    <p class="quote" style="max-width: 22ch; font-size: clamp(28px, 4.6vw, 84px);">The layer between who Claude already knows you to be, and what Viator has to sell you.</p>
+    <div class="rule" style="width: 30%;"></div>
+    <p class="muted">Taste-Mirror · microchipgnu@gmail.com</p>
+  </section>
+
+</div>
+
+<div class="nav">
+  <span id="counter">01 / 11</span>
+  <span>← →   space   ·   f for fullscreen</span>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  let i = 0;
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    counter.textContent = pad(i + 1) + ' / ' + pad(slides.length);
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    history.replaceState(null, '', '#' + (i + 1));
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown' || e.key === 'j') { show(i + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'k') { show(i - 1); e.preventDefault(); }
+    else if (e.key === 'Home') { show(0); }
+    else if (e.key === 'End') { show(slides.length - 1); }
+    else if (e.key === 'f') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;
+    const x = e.clientX / window.innerWidth;
+    show(x < 0.3 ? i - 1 : i + 1);
+  });
+
+  const start = parseInt((location.hash || '#1').slice(1), 10);
+  show(isNaN(start) ? 0 : start - 1);
+</script>
+</body>
+</html>

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx scripts/dev.ts",
-    "build-profile": "tsx skill/scripts/build-profile.ts",
+    "build-profile": "tsx skills/taste-mirror/scripts/build-profile.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

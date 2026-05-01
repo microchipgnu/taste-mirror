@@ -57,34 +57,52 @@ class LiveViatorClient implements ViatorClient {
     const flags: string[] = [];
     if (filters.prefer_private) flags.push("PRIVATE_TOUR");
 
-    const filtering: Record<string, unknown> = { destination: String(destId) };
-    if (tagMapping.tagIds.length) filtering.tags = tagMapping.tagIds;
-    if (flags.length) filtering.flags = flags;
-    if (filters.max_price?.amount) filtering.highestPrice = filters.max_price.amount;
-    if (duration.from || duration.to) filtering.durationInMinutes = duration;
+    // Build the strict filter set, then a relaxed fallback (destination +
+    // price only). Viator ANDs all filters; a wrong tag-id or an unlucky
+    // tag/flag combo can collapse the result set to 0 even in busy cities.
+    // The skill does the final ranking, so a slightly broader pool is fine.
+    const strict: Record<string, unknown> = { destination: String(destId) };
+    if (tagMapping.tagIds.length) strict.tags = tagMapping.tagIds;
+    if (flags.length) strict.flags = flags;
+    if (filters.max_price?.amount) strict.highestPrice = filters.max_price.amount;
+    if (duration.from || duration.to) strict.durationInMinutes = duration;
     if (filters.window) {
-      filtering.startDate = filters.window.start_date;
-      filtering.endDate = filters.window.end_date;
+      strict.startDate = filters.window.start_date;
+      strict.endDate = filters.window.end_date;
     }
 
-    const body = {
-      filtering,
-      sorting: { sort: "TRAVELER_RATING", order: "DESCENDING" },
-      pagination: { start: 1, count: Math.min(limit, 50) },
-      currency: filters.max_price?.currency ?? "USD",
-    };
+    const relaxed: Record<string, unknown> = { destination: String(destId) };
+    if (filters.max_price?.amount) relaxed.highestPrice = filters.max_price.amount;
 
     const url = this.withCampaign(`${VIATOR_BASE}/products/search`);
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      throw new Error(`Viator search failed: ${res.status} ${await res.text()}`);
+    const currency = filters.max_price?.currency ?? "USD";
+    const count = Math.min(limit, 50);
+
+    const tryOnce = async (
+      filtering: Record<string, unknown>,
+    ): Promise<ViatorProduct[]> => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          filtering,
+          sorting: { sort: "TRAVELER_RATING", order: "DESCENDING" },
+          pagination: { start: 1, count },
+          currency,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`Viator search failed: ${res.status} ${await res.text()}`);
+      }
+      const data = (await res.json()) as ViatorSearchResponse;
+      return data.products ?? [];
+    };
+
+    let products = await tryOnce(strict);
+    if (products.length === 0 && hasNarrowingFilters(strict)) {
+      products = await tryOnce(relaxed);
     }
-    const data = (await res.json()) as ViatorSearchResponse;
-    return (data.products ?? []).map((p) => mapViatorProduct(p, filters.destination));
+    return products.map((p) => mapViatorProduct(p, filters.destination));
   }
 
   async getProduct(productCode: string): Promise<ViatorProductDetail | null> {
@@ -158,6 +176,12 @@ class LiveViatorClient implements ViatorClient {
       "Content-Type": "application/json",
     };
   }
+}
+
+// Whether the strict filter set has anything beyond destination/price that
+// could explain a 0-result outcome (and therefore be worth retrying without).
+function hasNarrowingFilters(f: Record<string, unknown>): boolean {
+  return Boolean(f.tags || f.flags || f.durationInMinutes || f.startDate);
 }
 
 interface ViatorSearchResponse {

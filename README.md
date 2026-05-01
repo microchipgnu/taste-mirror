@@ -30,9 +30,9 @@ lib/viator.ts            # Viator client (mock + live; uses productUrl as-is)
 lib/viator-tags.ts       # /products/tags cache + vibe → tag-id mapping
 lib/vibe-to-filters.ts   # vibe_profile → search params
 lib/affiliate.ts         # mock-only affiliate URL builder (live uses Viator's productUrl)
-skill/SKILL.md           # the deliverable — what users install
-skill/references/        # detailed docs loaded on demand
-skill/scripts/           # bundled helpers (e.g. traveler-profile builder)
+skills/taste-mirror/SKILL.md       # the deliverable — what users install
+skills/taste-mirror/references/    # detailed docs loaded on demand
+skills/taste-mirror/scripts/       # bundled helpers (e.g. traveler-profile builder)
 ```
 
 The server hits four Viator endpoints: `GET /destinations` (cached, name → ID),
@@ -97,18 +97,29 @@ vercel --prod
 
 Then set the public URL as `TASTE_MIRROR_API` in the skill install instructions.
 
-## Installing the skill (Claude Code)
+## Installing the skill
+
+### Recommended: via [skills.sh](https://skills.sh)
 
 ```bash
-# copy the whole skill folder (SKILL.md + references/ + scripts/)
-mkdir -p ~/.claude/skills
-cp -R skill ~/.claude/skills/taste-mirror
+npx skills add <owner>/<repo>
+```
 
-# point the skill at your deployed server
+This pulls `skills/taste-mirror/` (SKILL.md + `references/` + `scripts/`) into your agent's skill directory automatically (e.g. `~/.claude/skills/taste-mirror/` for Claude Code). Then point the skill at your deployed server:
+
+```bash
 echo 'export TASTE_MIRROR_API=https://<your-vercel-url>' >> ~/.zshrc
 ```
 
-Restart Claude Code. The skill will trigger when you share travel-aesthetic images and ask for matching experiences.
+Restart your agent. The skill triggers when you share travel-aesthetic images and ask for matching experiences.
+
+### Manual install
+
+```bash
+mkdir -p ~/.claude/skills
+cp -R skills/taste-mirror ~/.claude/skills/taste-mirror
+echo 'export TASTE_MIRROR_API=https://<your-vercel-url>' >> ~/.zshrc
+```
 
 ### Optional: build the traveler profile
 
@@ -118,7 +129,7 @@ For sharper recommendations the skill can read `~/.taste-mirror/traveler_profile
 npx tsx ~/.claude/skills/taste-mirror/scripts/build-profile.ts
 ```
 
-First run takes ~30–50 min for ~100 projects at default settings; subsequent runs are nearly instant for unchanged transcripts. See [`skill/references/traveler-profile.md`](skill/references/traveler-profile.md) for knobs and rules.
+First invocation downloads `tsx` (~1 min, then cached). First profile build takes ~30–50 min for ~100 projects at default settings; subsequent runs are nearly instant for unchanged transcripts. See [`skills/taste-mirror/references/traveler-profile.md`](skills/taste-mirror/references/traveler-profile.md) for knobs and rules.
 
 ## Submission checklist (hackathon)
 
