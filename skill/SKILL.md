@@ -70,7 +70,7 @@ If the user hasn't said where they're going, ask. Optional inputs you can also g
 Don't ask if not necessary. One short turn, not four questions.
 
 ### 5. Call the server
-POST the request:
+POST the request. **Always request `limit: 15`** so you have room to drop vibe-mismatches in the next step and still present a strong shortlist:
 
 ```bash
 curl -sS -X POST "${TASTE_MIRROR_API:-http://localhost:3000}/api/match" \
@@ -78,11 +78,11 @@ curl -sS -X POST "${TASTE_MIRROR_API:-http://localhost:3000}/api/match" \
   -d '{
     "vibe_profile": { ...as above... },
     "destination": "Lisbon",
-    "limit": 8
+    "limit": 15
   }'
 ```
 
-The server returns up to `limit` candidates, each with `affiliate_url`, `title`, `short_description`, `duration_min`, `rating`, `review_count`, `price_from`, `image_url`, and `tags`.
+The server returns up to `limit` candidates, each with `affiliate_url`, `title`, `short_description`, `duration_min`, `rating`, `review_count`, `price_from`, `image_url`, and `tags`. Top-rated results in many cities skew toward mass-tourism options (hop-on/hop-off buses, generic city tours) — fetching more candidates gives you headroom to filter those out without ending up with a thin pool.
 
 ### 6. Rank, reason, present
 The server gives you a relevant set; **you** pick the top 3 (or up to 5 if the user explicitly wants more) and write the match reasoning. For each pick:
