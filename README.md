@@ -105,20 +105,19 @@ Then set the public URL as `TASTE_MIRROR_API` in the skill install instructions.
 npx skills add <owner>/<repo>
 ```
 
-This pulls `skills/taste-mirror/` (SKILL.md + `references/` + `scripts/`) into your agent's skill directory automatically (e.g. `~/.claude/skills/taste-mirror/` for Claude Code). Then point the skill at your deployed server:
+This pulls `skills/taste-mirror/` (SKILL.md + `references/` + `scripts/`) into your agent's skill directory automatically (e.g. `~/.claude/skills/taste-mirror/` for Claude Code). Restart your agent — the skill triggers when you share travel-aesthetic images and ask for matching experiences.
+
+The skill talks to the public deployment at `https://taste-mirror.vercel.app` by default. If you're running the server locally, override with:
 
 ```bash
-echo 'export TASTE_MIRROR_API=https://<your-vercel-url>' >> ~/.zshrc
+export TASTE_MIRROR_API=http://localhost:3000
 ```
-
-Restart your agent. The skill triggers when you share travel-aesthetic images and ask for matching experiences.
 
 ### Manual install
 
 ```bash
 mkdir -p ~/.claude/skills
 cp -R skills/taste-mirror ~/.claude/skills/taste-mirror
-echo 'export TASTE_MIRROR_API=https://<your-vercel-url>' >> ~/.zshrc
 ```
 
 ### Optional: build the traveler profile

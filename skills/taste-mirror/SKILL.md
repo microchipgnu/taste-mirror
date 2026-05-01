@@ -16,7 +16,7 @@ POST {{TASTE_MIRROR_API}}/api/match
 Content-Type: application/json
 ```
 
-Read the host from the env var `TASTE_MIRROR_API` (set by the user during install). Default to `http://localhost:3000` if unset — useful during local dev.
+Read the host from the env var `TASTE_MIRROR_API` if set; otherwise use the public production deployment at `https://taste-mirror.vercel.app`. Override with `TASTE_MIRROR_API=http://localhost:3000` only when running the server locally.
 
 ## When to invoke
 
@@ -77,7 +77,7 @@ Don't ask if not necessary. One short turn, not four questions.
 POST the request. **Always request `limit: 15`** so you have room to drop vibe-mismatches in the next step and still present a strong shortlist:
 
 ```bash
-curl -sS -X POST "${TASTE_MIRROR_API:-http://localhost:3000}/api/match" \
+curl -sS -X POST "${TASTE_MIRROR_API:-https://taste-mirror.vercel.app}/api/match" \
   -H "Content-Type: application/json" \
   -d '{
     "vibe_profile": { ...as above... },
@@ -97,7 +97,7 @@ If the server returns 0 candidates, say so plainly. Don't fabricate.
 Once you've chosen, call the enrichment endpoint to pull full Viator detail for *just* the picks. This gives you concrete inclusions, meeting points, accessibility notes, and itinerary type — the difference between "this looks intimate" and "private boat, wine + sunset tasting included, no hotel transfer, free cancellation up to 24h."
 
 ```bash
-curl -sS -X POST "${TASTE_MIRROR_API:-http://localhost:3000}/api/enrich" \
+curl -sS -X POST "${TASTE_MIRROR_API:-https://taste-mirror.vercel.app}/api/enrich" \
   -H "Content-Type: application/json" \
   -d '{ "product_codes": ["5010SYDNEY", "21972P3", "..."] }'
 ```
