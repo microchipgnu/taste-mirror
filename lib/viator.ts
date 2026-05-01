@@ -28,27 +28,24 @@ export function getViatorClient(): ViatorClient {
 // Live client (verify against real API tomorrow)
 // ──────────────────────────────────────────────────────────────────────
 
-const VIATOR_BASE = "https://api.viator.com/partner";
+const VIATOR_BASE = process.env.VIATOR_BASE_URL || "https://api.sandbox.viator.com/partner";
 
 class LiveViatorClient implements ViatorClient {
   async search(filters: SearchFilters, limit: number): Promise<ProductCandidate[]> {
     const apiKey = process.env.VIATOR_API_KEY;
     if (!apiKey) throw new Error("VIATOR_API_KEY not set");
 
-    // Step 1: resolve destination string → destinationId
     const destId = await this.resolveDestination(filters.destination, apiKey);
     if (!destId) return [];
 
-    // Step 2: products/search with filters
+    // Note: Viator expects integer tag IDs in `filtering.tags`. We deliberately
+    // omit tag filtering — the skill does post-filtering against vibe + avoid.
     const body = {
       filtering: {
         destination: destId,
-        tags: filters.free_text_tags,
-        ...(filters.max_price && {
-          highestPrice: filters.max_price.amount,
-        }),
+        ...(filters.max_price && { highestPrice: filters.max_price.amount }),
       },
-      sorting: { sort: filters.sort, order: "DESCENDING" },
+      sorting: { sort: "TRAVELER_RATING", order: "DESCENDING" },
       pagination: { start: 1, count: Math.min(limit, 20) },
       currency: filters.max_price?.currency ?? "USD",
     };
@@ -66,19 +63,32 @@ class LiveViatorClient implements ViatorClient {
   }
 
   private async resolveDestination(name: string, apiKey: string): Promise<number | null> {
-    // Viator exposes a /destinations endpoint returning the catalog. For the
-    // hackathon we'll cache this in-process. If lookup fails we just fall back
-    // to free-text search without a destinationId (still usable).
+    const all = await this.getDestinations(apiKey);
+    if (!all) return null;
+    const needle = name.trim().toLowerCase();
+
+    // Prefer IATA match (covers airports like "LIS"), then exact name, then substring.
+    const iata = all.find((d) => d.iataCodes?.some((c) => c.toLowerCase() === needle));
+    if (iata) return iata.destinationId;
+
+    const exact = all.find((d) => d.name.toLowerCase() === needle);
+    if (exact) return exact.destinationId;
+
+    const partial = all.find((d) => d.name.toLowerCase().includes(needle));
+    return partial?.destinationId ?? null;
+  }
+
+  private async getDestinations(apiKey: string): Promise<ViatorDestination[] | null> {
+    if (DESTINATIONS_CACHE) return DESTINATIONS_CACHE;
     try {
       const res = await fetch(`${VIATOR_BASE}/destinations`, {
         method: "GET",
         headers: this.headers(apiKey),
       });
       if (!res.ok) return null;
-      const data = (await res.json()) as { destinations?: Array<{ destinationId: number; name: string }> };
-      const lower = name.toLowerCase();
-      const hit = data.destinations?.find((d) => d.name.toLowerCase().includes(lower));
-      return hit?.destinationId ?? null;
+      const data = (await res.json()) as { destinations?: ViatorDestination[] };
+      DESTINATIONS_CACHE = data.destinations ?? [];
+      return DESTINATIONS_CACHE;
     } catch {
       return null;
     }
@@ -98,6 +108,15 @@ interface ViatorSearchResponse {
   products?: ViatorProduct[];
   totalCount?: number;
 }
+
+interface ViatorDestination {
+  destinationId: number;
+  name: string;
+  type?: string;
+  iataCodes?: string[];
+}
+
+let DESTINATIONS_CACHE: ViatorDestination[] | null = null;
 
 interface ViatorProduct {
   productCode: string;
