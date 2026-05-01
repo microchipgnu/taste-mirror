@@ -1,6 +1,7 @@
 import type { ProductCandidate } from "./types.js";
-import type { SearchFilters } from "./vibe-to-filters.js";
+import { DURATION_BUCKETS, type SearchFilters } from "./vibe-to-filters.js";
 import { withAffiliate } from "./affiliate.js";
+import { mapVibeToTagIds, type VibeTagMapping } from "./viator-tags.js";
 
 /**
  * Viator client.
@@ -9,13 +10,21 @@ import { withAffiliate } from "./affiliate.js";
  *   - mockSearch:  in-memory fixtures, used when MOCK_VIATOR=true (or no key set)
  *   - liveSearch:  hits Viator Partner API v2 (sandbox or prod via the API key)
  *
- * The real wire shapes will be verified tomorrow against the live sandbox.
- * Until then, liveSearch is written from the public docs and may need
- * tweaking — the mock path is what we develop against today.
+ * Live behaviour:
+ *   - Resolves destination name via /destinations (cached).
+ *   - Maps vibe vocabulary to integer tag IDs via /products/tags (cached)
+ *     and passes them in filtering.tags.
+ *   - Sets PRIVATE_TOUR flag when the vibe asks for an intimate experience.
+ *   - Honors window/budget/duration via filtering.startDate/endDate,
+ *     highestPrice, durationInMinutes.
+ *   - Passes ?campaign-value so productUrl comes back with attribution
+ *     baked in. The URL is returned to clients verbatim — modifying it
+ *     breaks Viator's attribution rules.
  */
 
 export interface ViatorClient {
   search(filters: SearchFilters, limit: number): Promise<ProductCandidate[]>;
+  getProduct?(productCode: string): Promise<ViatorProductDetail | null>;
 }
 
 export function getViatorClient(): ViatorClient {
@@ -25,34 +34,50 @@ export function getViatorClient(): ViatorClient {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Live client (verify against real API tomorrow)
+// Live client
 // ──────────────────────────────────────────────────────────────────────
 
 const VIATOR_BASE = process.env.VIATOR_BASE_URL || "https://api.sandbox.viator.com/partner";
 
 class LiveViatorClient implements ViatorClient {
   async search(filters: SearchFilters, limit: number): Promise<ProductCandidate[]> {
-    const apiKey = process.env.VIATOR_API_KEY;
-    if (!apiKey) throw new Error("VIATOR_API_KEY not set");
+    const apiKey = this.requireKey();
+    const headers = this.headers(apiKey);
 
-    const destId = await this.resolveDestination(filters.destination, apiKey);
+    const destId = await this.resolveDestination(filters.destination, headers);
     if (!destId) return [];
 
-    // Note: Viator expects integer tag IDs in `filtering.tags`. We deliberately
-    // omit tag filtering — the skill does post-filtering against vibe + avoid.
+    const tagMapping = await mapVibeToTagIds(filters.free_text_tags, {
+      apiKey,
+      baseUrl: VIATOR_BASE,
+      headers,
+    });
+
+    const duration = DURATION_BUCKETS[filters.duration_pref];
+    const flags: string[] = [];
+    if (filters.prefer_private) flags.push("PRIVATE_TOUR");
+
+    const filtering: Record<string, unknown> = { destination: String(destId) };
+    if (tagMapping.tagIds.length) filtering.tags = tagMapping.tagIds;
+    if (flags.length) filtering.flags = flags;
+    if (filters.max_price?.amount) filtering.highestPrice = filters.max_price.amount;
+    if (duration.from || duration.to) filtering.durationInMinutes = duration;
+    if (filters.window) {
+      filtering.startDate = filters.window.start_date;
+      filtering.endDate = filters.window.end_date;
+    }
+
     const body = {
-      filtering: {
-        destination: destId,
-        ...(filters.max_price && { highestPrice: filters.max_price.amount }),
-      },
+      filtering,
       sorting: { sort: "TRAVELER_RATING", order: "DESCENDING" },
-      pagination: { start: 1, count: Math.min(limit, 20) },
+      pagination: { start: 1, count: Math.min(limit, 50) },
       currency: filters.max_price?.currency ?? "USD",
     };
 
-    const res = await fetch(`${VIATOR_BASE}/products/search`, {
+    const url = this.withCampaign(`${VIATOR_BASE}/products/search`);
+    const res = await fetch(url, {
       method: "POST",
-      headers: this.headers(apiKey),
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -62,12 +87,41 @@ class LiveViatorClient implements ViatorClient {
     return (data.products ?? []).map((p) => mapViatorProduct(p, filters.destination));
   }
 
-  private async resolveDestination(name: string, apiKey: string): Promise<number | null> {
-    const all = await this.getDestinations(apiKey);
+  async getProduct(productCode: string): Promise<ViatorProductDetail | null> {
+    const apiKey = this.requireKey();
+    const url = this.withCampaign(
+      `${VIATOR_BASE}/products/${encodeURIComponent(productCode)}`,
+    );
+    const res = await fetch(url, { method: "GET", headers: this.headers(apiKey) });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`Viator product fetch failed: ${res.status} ${await res.text()}`);
+    }
+    return (await res.json()) as ViatorProductDetail;
+  }
+
+  private requireKey(): string {
+    const apiKey = process.env.VIATOR_API_KEY;
+    if (!apiKey) throw new Error("VIATOR_API_KEY not set");
+    return apiKey;
+  }
+
+  private withCampaign(url: string): string {
+    const campaign = process.env.VIATOR_CAMPAIGN;
+    if (!campaign) return url;
+    const u = new URL(url);
+    u.searchParams.set("campaign-value", campaign);
+    return u.toString();
+  }
+
+  private async resolveDestination(
+    name: string,
+    headers: Record<string, string>,
+  ): Promise<number | null> {
+    const all = await this.getDestinations(headers);
     if (!all) return null;
     const needle = name.trim().toLowerCase();
 
-    // Prefer IATA match (covers airports like "LIS"), then exact name, then substring.
     const iata = all.find((d) => d.iataCodes?.some((c) => c.toLowerCase() === needle));
     if (iata) return iata.destinationId;
 
@@ -78,12 +132,14 @@ class LiveViatorClient implements ViatorClient {
     return partial?.destinationId ?? null;
   }
 
-  private async getDestinations(apiKey: string): Promise<ViatorDestination[] | null> {
+  private async getDestinations(
+    headers: Record<string, string>,
+  ): Promise<ViatorDestination[] | null> {
     if (DESTINATIONS_CACHE) return DESTINATIONS_CACHE;
     try {
       const res = await fetch(`${VIATOR_BASE}/destinations`, {
         method: "GET",
-        headers: this.headers(apiKey),
+        headers,
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { destinations?: ViatorDestination[] };
@@ -122,16 +178,42 @@ interface ViatorProduct {
   productCode: string;
   title: string;
   description?: string;
-  duration?: { fixedDurationInMinutes?: number };
+  duration?: {
+    fixedDurationInMinutes?: number;
+    variableDurationFromMinutes?: number;
+    variableDurationToMinutes?: number;
+  };
   reviews?: { combinedAverageRating?: number; totalReviews?: number };
   pricing?: { summary?: { fromPrice?: number }; currency?: string };
   images?: Array<{ variants?: Array<{ url: string; width: number; height: number }> }>;
   tags?: number[];
+  flags?: string[];
   productUrl?: string;
 }
 
+export interface ViatorProductDetail extends ViatorProduct {
+  inclusions?: Array<{ category?: string; description?: string; otherDescription?: string }>;
+  exclusions?: Array<{ category?: string; description?: string; otherDescription?: string }>;
+  itinerary?: unknown;
+  additionalInfo?: Array<{ description?: string }>;
+  cancellationPolicy?: unknown;
+}
+
+function durationToMinutes(d?: ViatorProduct["duration"]): number | null {
+  if (!d) return null;
+  if (typeof d.fixedDurationInMinutes === "number") return d.fixedDurationInMinutes;
+  if (typeof d.variableDurationFromMinutes === "number") return d.variableDurationFromMinutes;
+  return null;
+}
+
 function mapViatorProduct(p: ViatorProduct, destination: string): ProductCandidate {
-  const sourceUrl = p.productUrl ?? `https://www.viator.com/tours/${p.productCode}`;
+  const fallback = `https://www.viator.com/tours/${p.productCode}`;
+  // Viator-issued productUrl already has full attribution baked in; do NOT
+  // modify it (per Viator docs, modification breaks commission attribution).
+  // withAffiliate is only used for the mock path / when productUrl is missing.
+  const sourceUrl = p.productUrl ?? fallback;
+  const affiliateUrl = p.productUrl ?? withAffiliate(fallback);
+
   const image =
     p.images?.[0]?.variants?.find((v) => v.width >= 480)?.url ??
     p.images?.[0]?.variants?.[0]?.url ??
@@ -141,7 +223,7 @@ function mapViatorProduct(p: ViatorProduct, destination: string): ProductCandida
     product_id: p.productCode,
     title: p.title,
     short_description: (p.description ?? "").slice(0, 300),
-    duration_min: p.duration?.fixedDurationInMinutes ?? null,
+    duration_min: durationToMinutes(p.duration),
     rating: p.reviews?.combinedAverageRating ?? null,
     review_count: p.reviews?.totalReviews ?? null,
     price_from:
@@ -149,10 +231,10 @@ function mapViatorProduct(p: ViatorProduct, destination: string): ProductCandida
         ? { amount: p.pricing.summary.fromPrice, currency: p.pricing.currency ?? "USD" }
         : null,
     image_url: image,
-    tags: [],
+    tags: (p.tags ?? []).map(String),
     destination,
     source_url: sourceUrl,
-    affiliate_url: withAffiliate(sourceUrl),
+    affiliate_url: affiliateUrl,
   };
 }
 
@@ -165,8 +247,6 @@ class MockViatorClient implements ViatorClient {
     const destKey = filters.destination.trim().toLowerCase();
     const pool = MOCK_PRODUCTS[destKey] ?? MOCK_PRODUCTS["__default__"]!;
 
-    // Light pseudo-relevance: bump items whose tags share words with the
-    // requested free_text_tags so the mock feels responsive to vibe inputs.
     const tagSet = new Set(filters.free_text_tags.map((t) => t.toLowerCase()));
     const avoidSet = new Set(filters.exclude_tags.map((t) => t.toLowerCase()));
 
@@ -185,6 +265,39 @@ class MockViatorClient implements ViatorClient {
       }));
 
     return ranked;
+  }
+
+  async getProduct(productCode: string): Promise<ViatorProductDetail | null> {
+    for (const pool of Object.values(MOCK_PRODUCTS)) {
+      const p = pool.find((x) => x.product_id === productCode);
+      if (!p) continue;
+      return {
+        productCode: p.product_id,
+        title: p.title,
+        description: p.short_description,
+        duration: p.duration_min ? { fixedDurationInMinutes: p.duration_min } : undefined,
+        reviews: p.rating
+          ? {
+              combinedAverageRating: p.rating,
+              totalReviews: p.review_count ?? undefined,
+            }
+          : undefined,
+        pricing: p.price_from
+          ? {
+              summary: { fromPrice: p.price_from.amount },
+              currency: p.price_from.currency,
+            }
+          : undefined,
+        productUrl: p.source_url,
+        inclusions: [
+          { description: "Hotel pickup and drop-off (mock)" },
+          { description: "Local guide (mock)" },
+        ],
+        exclusions: [{ description: "Gratuities (mock)" }],
+        additionalInfo: [{ description: "Mock product detail — live API returns much more." }],
+      };
+    }
+    return null;
   }
 }
 
@@ -393,3 +506,5 @@ const MOCK_PRODUCTS: Record<string, ProductCandidate[]> = {
     ),
   ],
 };
+
+export type { VibeTagMapping };

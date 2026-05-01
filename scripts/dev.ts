@@ -7,7 +7,8 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import handler from "../api/match.js";
+import matchHandler from "../api/match.js";
+import enrichHandler from "../api/enrich.js";
 
 // Minimal .env.local loader (no dotenv dep needed for one file).
 const envPath = path.resolve(".env.local");
@@ -26,8 +27,11 @@ if (fs.existsSync(envPath)) {
 const PORT = Number(process.env.PORT ?? 3000);
 
 const server = http.createServer(async (req, res) => {
-  // Only /api/match for now.
-  if (!req.url || !req.url.startsWith("/api/match")) {
+  let handler: typeof matchHandler | null = null;
+  if (req.url?.startsWith("/api/match")) handler = matchHandler;
+  else if (req.url?.startsWith("/api/enrich")) handler = enrichHandler;
+
+  if (!handler) {
     res.statusCode = 404;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "not_found" }));
@@ -83,4 +87,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`▲ taste-mirror dev server listening on http://localhost:${PORT}`);
   console.log(`  POST /api/match  (MOCK_VIATOR=${process.env.MOCK_VIATOR ?? "<unset>"})`);
+  console.log(`  POST /api/enrich`);
 });

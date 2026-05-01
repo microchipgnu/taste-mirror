@@ -23,13 +23,22 @@ The skill does the *thinking* (vision analysis, vibe distillation, ranking, reas
 ## Repo layout
 
 ```
-api/match.ts             # the one endpoint
+api/match.ts             # POST: vibe + destination → ranked Viator candidates
+api/enrich.ts            # POST: product codes → full Viator detail (inclusions, etc.)
 lib/types.ts             # shared types + zod schemas
-lib/viator.ts            # Viator client (mock + live)
+lib/viator.ts            # Viator client (mock + live; uses productUrl as-is)
+lib/viator-tags.ts       # /products/tags cache + vibe → tag-id mapping
 lib/vibe-to-filters.ts   # vibe_profile → search params
-lib/affiliate.ts         # affiliate URL builder
+lib/affiliate.ts         # mock-only affiliate URL builder (live uses Viator's productUrl)
 skill/SKILL.md           # the deliverable — what users install
+skill/references/        # detailed docs loaded on demand
+skill/scripts/           # bundled helpers (e.g. traveler-profile builder)
 ```
+
+The server hits four Viator endpoints: `GET /destinations` (cached, name → ID),
+`GET /products/tags` (cached, vibe vocab → tag IDs), `POST /products/search`
+(filtered by tags + flags + duration + window + price), and `GET /products/{product-code}`
+(detail enrichment for the skill's top 3 picks).
 
 ## Local dev
 
@@ -91,13 +100,25 @@ Then set the public URL as `TASTE_MIRROR_API` in the skill install instructions.
 ## Installing the skill (Claude Code)
 
 ```bash
-mkdir -p ~/.claude/skills/taste-mirror
-cp skill/SKILL.md ~/.claude/skills/taste-mirror/SKILL.md
+# copy the whole skill folder (SKILL.md + references/ + scripts/)
+mkdir -p ~/.claude/skills
+cp -R skill ~/.claude/skills/taste-mirror
+
 # point the skill at your deployed server
 echo 'export TASTE_MIRROR_API=https://<your-vercel-url>' >> ~/.zshrc
 ```
 
 Restart Claude Code. The skill will trigger when you share travel-aesthetic images and ask for matching experiences.
+
+### Optional: build the traveler profile
+
+For sharper recommendations the skill can read `~/.taste-mirror/traveler_profile.md` — a synthesized portrait of the user distilled from their Claude Code transcripts. Build it with the script bundled in the skill (uses your existing Claude Code auth, **no extra API key**):
+
+```bash
+npx tsx ~/.claude/skills/taste-mirror/scripts/build-profile.ts
+```
+
+First run takes ~30–50 min for ~100 projects at default settings; subsequent runs are nearly instant for unchanged transcripts. See [`skill/references/traveler-profile.md`](skill/references/traveler-profile.md) for knobs and rules.
 
 ## Submission checklist (hackathon)
 

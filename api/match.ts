@@ -24,11 +24,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  const { vibe_profile, destination, budget_per_person, travelers, limit } = parsed.data;
+  const { vibe_profile, destination, budget_per_person, travelers, window, limit } = parsed.data;
 
   const filters = vibeToFilters(vibe_profile, destination, {
     budget_per_person,
     travelers,
+    window,
   });
 
   try {
@@ -46,8 +47,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           free_text_tags: filters.free_text_tags,
           exclude_tags: filters.exclude_tags,
           duration_pref: filters.duration_pref,
-          group_size_pref: filters.group_size_pref,
-          sort: filters.sort,
+          prefer_private: filters.prefer_private,
+          window: filters.window,
         },
       },
     };
